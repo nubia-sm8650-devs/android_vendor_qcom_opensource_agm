@@ -39,6 +39,7 @@
 #include <hidl/LegacySupport.h>
 #include <log/log.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <vendor/qti/hardware/AGMIPC/1.0/IAGM.h>
 
 #include <agm/agm_api.h>
@@ -821,34 +822,79 @@ int agm_get_buffer_timestamp(uint32_t session_id, uint64_t *timestamp)
 
 int agm_session_get_buf_info(uint32_t session_id, struct agm_buf_info *buf_info, uint32_t flag)
 {
-    ALOGV("%s : session_id = %d\n", __func__, session_id);
-    int ret = -EINVAL;
-    if (!agm_server_died) {
-        android::sp<IAGM> agm_client = get_agm_server();
-        const native_handle *datahandle = nullptr;
-        const native_handle *poshandle = nullptr;
+    if (!buf_info || !flag || (flag & ~(DATA_BUF | POS_BUF)))
+        return -EINVAL;
 
-        auto status = agm_client->ipc_agm_session_get_buf_info(session_id, flag,
-                [&](int32_t _ret, const MmapBufInfo& buf_info_ret_hidl)
-                { ret = _ret;
-                if (!ret) {
-                if (flag & DATA_BUF) {
-                datahandle = buf_info_ret_hidl.dataSharedMemory.handle();
-                buf_info->data_buf_fd = dup(datahandle->data[0]);
-                buf_info->data_buf_size = buf_info_ret_hidl.data_size;
+    if (agm_server_died)
+        return -ENODEV;
+
+    auto server = get_agm_server();
+    if (!server)
+        return -ENODEV;
+
+    agm_buf_info output{-1, 0, -1, 0};
+    int ret = -EPIPE;
+
+    auto duplicate = [](const native_handle_t *handle) {
+        if (!handle || handle->numFds != 1 || handle->numInts ||
+            handle->data[0] < 0)
+            return -EPROTO;
+
+        int fd = fcntl(handle->data[0], F_DUPFD_CLOEXEC, 0);
+
+        return fd < 0 ? -errno : fd;
+    };
+
+    auto transaction = server->ipc_agm_session_get_buf_info(session_id, flag,
+        [&](int32_t status, const MmapBufInfo &value) {
+            ret = status;
+            if (ret)
+                return;
+
+            if (flag & DATA_BUF) {
+                output.data_buf_fd = duplicate(value.dataSharedMemory.handle());
+                if (output.data_buf_fd < 0) {
+                    ret = output.data_buf_fd;
+                    return;
                 }
-                if (flag & POS_BUF) {
-                poshandle = buf_info_ret_hidl.posSharedMemory.handle();
-                buf_info->pos_buf_fd = poshandle->data[0];
-                buf_info->pos_buf_size = buf_info_ret_hidl.pos_size;
+
+                output.data_buf_size = value.data_size;
+            }
+
+            if (flag & POS_BUF) {
+                output.pos_buf_fd = duplicate(value.posSharedMemory.handle());
+                if (output.pos_buf_fd < 0) {
+                    ret = output.pos_buf_fd;
+                    return;
                 }
-                }
-                });
-        if (!status.isOk()) {
-            ALOGE("%s: HIDL call failed. ret=%d\n", __func__, ret);
-        }
+
+                output.pos_buf_size = value.pos_size;
+            }
+        });
+    if (!transaction.isOk())
+        ret = -EPIPE;
+
+    if (ret) {
+        if (output.data_buf_fd >= 0)
+            close(output.data_buf_fd);
+
+        if (output.pos_buf_fd >= 0)
+            close(output.pos_buf_fd);
+
+        return ret;
     }
-    return ret;
+
+    if (flag & DATA_BUF) {
+        buf_info->data_buf_fd = output.data_buf_fd;
+        buf_info->data_buf_size = output.data_buf_size;
+    }
+
+    if (flag & POS_BUF) {
+        buf_info->pos_buf_fd = output.pos_buf_fd;
+        buf_info->pos_buf_size = output.pos_buf_size;
+    }
+
+    return 0;
 }
 
 int agm_set_gapless_session_metadata(uint64_t handle, enum agm_gapless_silence_type type,

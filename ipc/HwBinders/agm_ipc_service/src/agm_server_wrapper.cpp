@@ -1350,7 +1350,7 @@ Return<void> AGM::ipc_agm_session_get_buf_info(uint32_t session_id, uint32_t fla
                                              ipc_agm_session_get_buf_info_cb _hidl_cb) {
     struct agm_buf_info buf_info;
     int32_t ret = -EINVAL;
-    MmapBufInfo info;
+    MmapBufInfo info{};
     native_handle_t *dataHidlHandle = nullptr;
     native_handle_t *posHidlHandle = nullptr;
 
@@ -1364,7 +1364,8 @@ Return<void> AGM::ipc_agm_session_get_buf_info(uint32_t session_id, uint32_t fla
             dataHidlHandle = native_handle_create(1, 0);
             if (!dataHidlHandle) {
                 ALOGE("%s native_handle_create fails", __func__);
-                goto exit;
+                ret = -ENOMEM;
+                goto reply;
             }
             dataHidlHandle->data[0] = buf_info.data_buf_fd;
             info.dataSharedMemory = hidl_memory("ar_data_buf", hidl_handle(dataHidlHandle),
@@ -1375,7 +1376,8 @@ Return<void> AGM::ipc_agm_session_get_buf_info(uint32_t session_id, uint32_t fla
             posHidlHandle = native_handle_create(1, 0);
             if (!posHidlHandle) {
                 ALOGE("%s native_handle_create fails", __func__);
-                goto exit;
+                ret = -ENOMEM;
+                goto reply;
             }
             posHidlHandle->data[0] = buf_info.pos_buf_fd;
             info.posSharedMemory = hidl_memory("ar_pos_buf", posHidlHandle,
@@ -1384,9 +1386,9 @@ Return<void> AGM::ipc_agm_session_get_buf_info(uint32_t session_id, uint32_t fla
         }
     }
 
+reply:
     _hidl_cb(ret, info);
 
-exit:
     if (dataHidlHandle != nullptr)
         native_handle_delete(dataHidlHandle);
 
