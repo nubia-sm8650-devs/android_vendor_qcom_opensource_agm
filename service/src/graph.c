@@ -182,10 +182,18 @@ done:
 static int graph_configure_module(module_info_t *mod,
                                   struct graph_obj *graph_obj)
 {
-    if (graph_native() && graph_native_configures(mod->tag))
-        return 0;
+    struct session_obj *sess_obj = graph_obj->sess_obj;
 
-    return mod->configure(mod, graph_obj);
+    if (!graph_native() || !graph_native_configures(mod->tag))
+        return mod->configure(mod, graph_obj);
+
+    if (mod->tag == TAG_STREAM_PLACEHOLDER_ENCODER && sess_obj &&
+        sess_obj->stream_config.sess_mode == AGM_SESSION_COMPRESS &&
+        sess_obj->stream_config.dir == TX &&
+        sess_obj->in_media_config.format == AGM_FORMAT_AAC)
+        return configure_aac_encoder(mod, graph_obj);
+
+    return 0;
 }
 
 int graph_set_backend_media(struct graph_obj *graph_obj,

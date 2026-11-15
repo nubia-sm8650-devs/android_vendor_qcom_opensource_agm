@@ -166,5 +166,6 @@ struct graph_obj {
 
 void get_stream_module_list_array(module_info_t **info, size_t *size);
 void get_hw_ep_module_list_array(module_info_t **info, size_t *size);
+int configure_aac_encoder(struct module_info *mod, struct graph_obj *graph_obj);
 
 #endif /*GPH_MODULE_H*/
