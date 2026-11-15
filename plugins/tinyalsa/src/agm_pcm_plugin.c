@@ -332,8 +332,11 @@ static int agm_pcm_plugin_kernel_hw_ptr(struct agm_pcm_priv *priv)
     sync.flags = SNDRV_PCM_SYNC_PTR_HWSYNC | SNDRV_PCM_SYNC_PTR_APPL |
                  SNDRV_PCM_SYNC_PTR_AVAIL_MIN;
 
-    if (ioctl(priv->buf_info->pos_buf_fd, SNDRV_PCM_IOCTL_SYNC_PTR, &sync) < 0)
+    if (ioctl(priv->buf_info->pos_buf_fd, SNDRV_PCM_IOCTL_SYNC_PTR, &sync) < 0) {
+        AGM_LOGE("%s: session %d: no position from the PCM: %s\n", __func__,
+                 priv->session_id, strerror(errno));
         return -errno;
+    }
 
     priv->pos_buf->hw_ptr = sync.s.status.hw_ptr;
     priv->pos_buf->tstamp.tv_sec = sync.s.status.tstamp.tv_sec;
@@ -481,8 +484,11 @@ static int agm_pcm_plugin_reset(struct pcm_plugin *plugin)
         ret = -EINVAL;
     }
     if (priv->kernel_position) {
-        if (ioctl(priv->buf_info->pos_buf_fd, SNDRV_PCM_IOCTL_RESET) < 0)
+        if (ioctl(priv->buf_info->pos_buf_fd, SNDRV_PCM_IOCTL_RESET) < 0) {
+            AGM_LOGE("%s: session %d: the PCM does not reset: %s\n", __func__,
+                     priv->session_id, strerror(errno));
             return -errno;
+        }
 
         return ret ? ret : agm_pcm_plugin_update_hw_ptr(priv);
     }
@@ -883,6 +889,8 @@ static void* agm_pcm_mmap(struct pcm_plugin *plugin, void *addr __unused, size_t
 
             if (!priv->buf_info->pos_buf_size) {
                 priv->kernel_position = true;
+                AGM_LOGD("%s: session %d takes its position from the PCM\n",
+                         __func__, priv->session_id);
             } else {
                 pos->pos_buf_addr = mmap(0, priv->buf_info->pos_buf_size,
                         PROT_READ | PROT_WRITE, MAP_SHARED,
