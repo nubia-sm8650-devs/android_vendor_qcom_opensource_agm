@@ -27,6 +27,9 @@ cc_library_shared {
     ] + select(soong_config_variable("qtiaudio", "feature_ar_memlogger"), {
         "true": [],
         default: ["-DAGM_MEMLOG_UNSUPPORTED"],
+    }) + select(soong_config_variable("qtiaudio", "feature_native_topology"), {
+        "true": ["-DAGM_NATIVE_TOPOLOGY"],
+        default: [],
     }),
 
     srcs: [
@@ -35,6 +38,7 @@ cc_library_shared {
         "src/device_hw_ep.c",
         "src/graph.c",
         "src/graph_module.c",
+        "src/graph_native.c",
         "src/metadata.c",
         "src/session_obj.c",
         "src/utils.c",

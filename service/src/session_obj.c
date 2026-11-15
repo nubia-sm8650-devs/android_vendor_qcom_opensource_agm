@@ -35,6 +35,7 @@
 #include <malloc.h>
 #include <string.h>
 #include <agm/session_obj.h>
+#include <agm/graph_native.h>
 #include <agm/utils.h>
 
 #ifdef DYNAMIC_LOG_ENABLED
@@ -1390,6 +1391,23 @@ int session_obj_init()
 {
     int ret = 0;
 
+    /* A native sound card gets its devices from GSL. */
+    if (graph_native()) {
+        ret = graph_init();
+        if (ret) {
+            AGM_LOGE("Error:%d initializing graph\n", ret);
+            goto done;
+        }
+
+        ret = device_init();
+        if (ret) {
+            AGM_LOGE("Error:%d initializing device\n", ret);
+            goto graph_deinit;
+        }
+
+        goto pool;
+    }
+
     ret = device_init();
     if (ret) {
         AGM_LOGE("Error:%d initializing device\n", ret);
@@ -1402,6 +1420,7 @@ int session_obj_init()
         goto device_deinit;
     }
 
+pool:
     ret = session_pool_init();
     if (ret) {
         AGM_LOGE("Error:%d initializing session_pool\n", ret);

@@ -42,7 +42,9 @@
 #include <unistd.h>
 #include <limits.h>
 #include <stdbool.h>
+#include "gsl_intf.h"
 #include <agm/device.h>
+#include <agm/graph_native.h>
 #include <agm/metadata.h>
 #include <agm/utils.h>
 #include <fcntl.h>
@@ -367,6 +369,9 @@ int device_open(struct device_obj *dev_obj)
     config.start_threshold = config.period_size / 4;
     config.stop_threshold = INT_MAX;
 
+    if (graph_native())
+        goto opened;
+
     pcm_flags = (obj->hw_ep_info.dir == AUDIO_OUTPUT) ? PCM_OUT : PCM_IN;
     pcm = pcm_open(obj->card_id, obj->pcm_id, pcm_flags,
                 &config);
@@ -379,6 +384,8 @@ int device_open(struct device_obj *dev_obj)
         goto done;
     }
     obj->pcm = pcm;
+
+opened:
     obj->state = DEV_OPENED;
     obj->refcnt.open++;
     if (grp_data)
@@ -419,7 +426,7 @@ int device_prepare(struct device_obj *dev_obj)
 #ifdef DEVICE_USES_ALSALIB
     ret = snd_pcm_prepare(obj->pcm);
 #else
-    ret = pcm_prepare(obj->pcm);
+    ret = graph_native() ? 0 : pcm_prepare(obj->pcm);
 #endif
     if (ret) {
         AGM_LOGE("PCM device %u prepare failed, ret = %d\n",
@@ -508,7 +515,7 @@ int device_stop(struct device_obj *dev_obj)
 #ifdef DEVICE_USES_ALSALIB
         ret = snd_pcm_drop(obj->pcm);
 #else
-        ret = pcm_stop(obj->pcm);
+        ret = graph_native() ? 0 : pcm_stop(obj->pcm);
 #endif
         if (ret) {
             AGM_LOGE("PCM device %u stop failed, ret = %d\n",
@@ -554,7 +561,7 @@ int device_close(struct device_obj *dev_obj)
 #ifdef DEVICE_USES_ALSALIB
         ret = snd_pcm_close(obj->pcm);
 #else
-        ret = pcm_close(obj->pcm);
+        ret = graph_native() ? 0 : pcm_close(obj->pcm);
 #endif
         if (ret) {
             AGM_LOGE("PCM device %u close failed, ret = %d\n",
@@ -1090,9 +1097,68 @@ static int wait_for_snd_card_to_online()
     return ret;
 }
 
+/*
+ * A native sound card starts its backends with the graphs and lists none of
+ * them as PCM devices, so GSL knows the devices.
+ */
+static int list_gsl_backends()
+{
+    struct gsl_backend *backends = NULL;
+    struct device_obj *dev_obj = NULL;
+    uint32_t count = 0, i;
+    int ret;
+
+    list_init(&device_list);
+    list_init(&device_group_data_list);
+    num_group_devices = 0;
+
+    ret = ar_err_get_lnx_err_code(gsl_get_backends(NULL, &count));
+    if (ret)
+        return ret;
+
+    if (!count)
+        return -ENODEV;
+
+    backends = calloc(count, sizeof(*backends));
+    if (!backends)
+        return -ENOMEM;
+
+    ret = ar_err_get_lnx_err_code(gsl_get_backends(backends, &count));
+    if (ret)
+        goto done;
+
+    for (i = 0; i < count; i++) {
+        dev_obj = calloc(1, sizeof(struct device_obj));
+        if (!dev_obj) {
+            ret = -ENOMEM;
+            goto done;
+        }
+
+        dev_obj->pcm_id = backends[i].id;
+        strlcpy(dev_obj->name, backends[i].name, sizeof(dev_obj->name));
+
+        if (populate_device_hw_ep_info(dev_obj))
+            dev_obj->hw_ep_info.dir = backends[i].is_capture ? AUDIO_INPUT :
+                                                              AUDIO_OUTPUT;
+
+        pthread_mutex_init(&dev_obj->lock, (const pthread_mutexattr_t *) NULL);
+        list_add_tail(&device_list, &dev_obj->list_node);
+    }
+
+    num_audio_intfs = count;
+
+done:
+    free(backends);
+
+    return ret;
+}
+
 int device_init()
 {
     int ret = 0;
+
+    if (graph_native())
+        return list_gsl_backends();
 
 #ifndef CARD_STATE_UNSUPPORTED
     ret = wait_for_snd_card_to_online();
@@ -1278,6 +1344,19 @@ bool get_file_path_extn(char* file_path_extn, char* file_path_extn_wo_variant)
 {
     int snd_card_found = false, retry = 0;
     char snd_card_name[FILE_PATH_EXTN_MAX_SIZE];
+
+    /* The ACDB files of a native sound card are those of its stock card. */
+    if (graph_native()) {
+        if (!graph_native_card_name(snd_card_name, sizeof(snd_card_name))) {
+            AGM_LOGE("the native sound card has no stock card name\n");
+            return false;
+        }
+
+        split_snd_card_name(snd_card_name, file_path_extn,
+                            file_path_extn_wo_variant);
+
+        return true;
+    }
 
     do {
         snd_card_found = update_snd_card_info(snd_card_name);
