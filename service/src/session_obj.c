@@ -519,10 +519,19 @@ static int session_set_ec_ref(struct session_obj *sess_obj, uint32_t aif_id,
         goto done;
     }
 
-    if (enable)
+    if (enable) {
+        ret = graph_set_backend_media(sess_obj->graph, &merged_metadata->gkv,
+                                      dev_obj);
+        if (ret) {
+            AGM_LOGE("Error:%d setting the reference format, session_id: %d\n",
+                     ret, sess_obj->sess_id);
+            goto done;
+        }
+
         ret = graph_add(sess_obj->graph, merged_metadata, NULL);
-    else
+    } else {
         ret = graph_remove(sess_obj->graph, merged_metadata);
+    }
 
     if (ret) {
         AGM_LOGE("Error:%d graph %s failed for session_id: %d\n",

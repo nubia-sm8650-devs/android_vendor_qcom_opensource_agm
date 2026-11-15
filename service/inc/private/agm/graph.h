@@ -255,6 +255,19 @@ int graph_change(struct graph_obj *gph_obj,
                      struct agm_meta_data_gsl *meta_data_kv,
                      struct device_obj *dev_obj);
 
+/**
+ *\brief Give GSL the format of the backend that a graph key vector uses,
+ *        on a sound card whose backends GSL configures.
+ *\param [in] graph_obj: associated graph obj
+ *\param [in] gkv: graph key vector that routes to the device
+ *\param [in] dev_obj: device whose media config applies
+ *
+ * return 0 on success or error code otherwise.
+ */
+int graph_set_backend_media(struct graph_obj *graph_obj,
+                            struct agm_key_vector_gsl *gkv,
+                            struct device_obj *dev_obj);
+
 
 /**
  *\brief remove certain graph modules from an exisitng graph.

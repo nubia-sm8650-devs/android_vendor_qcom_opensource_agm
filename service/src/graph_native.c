@@ -368,3 +368,25 @@ int graph_native_set_media(gsl_handle_t graph, struct session_obj *session)
 
     return ar_err_get_lnx_err_code(ret);
 }
+
+int graph_native_set_backend(gsl_handle_t graph,
+                             const struct agm_key_vector_gsl *gkv,
+                             struct device_obj *device)
+{
+    struct gsl_cmd_configure_backend_media backend = {0};
+    const struct agm_media_config *media = &device->media_config;
+    int ret;
+
+    backend.graph_key_vector.num_kvps = gkv->num_kvs;
+    backend.graph_key_vector.kvp = (struct gsl_key_value_pair *)gkv->kv;
+    backend.backend = device->pcm_id;
+    backend.sample_rate = media->rate;
+    backend.num_channels = media->channels;
+    backend.data_format = media->data_format;
+    sample_bits(media->format, &backend.bit_width, &backend.bits_per_sample);
+
+    ret = gsl_ioctl(graph, GSL_CMD_CONFIGURE_BACKEND_MEDIA, &backend,
+                    sizeof(backend));
+
+    return ar_err_get_lnx_err_code(ret);
+}

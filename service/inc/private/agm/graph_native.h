@@ -22,5 +22,8 @@ static inline bool graph_native(void)
 int graph_native_card_name(char *name, size_t size);
 bool graph_native_configures(uint32_t tag);
 int graph_native_set_media(gsl_handle_t graph, struct session_obj *session);
+int graph_native_set_backend(gsl_handle_t graph,
+                             const struct agm_key_vector_gsl *gkv,
+                             struct device_obj *device);
 
 #endif

@@ -188,6 +188,16 @@ static int graph_configure_module(module_info_t *mod,
     return mod->configure(mod, graph_obj);
 }
 
+int graph_set_backend_media(struct graph_obj *graph_obj,
+                            struct agm_key_vector_gsl *gkv,
+                            struct device_obj *dev_obj)
+{
+    if (!graph_native() || !graph_obj || !dev_obj)
+        return 0;
+
+    return graph_native_set_backend(graph_obj->graph_handle, gkv, dev_obj);
+}
+
 int configure_buffer_params(struct graph_obj *gph_obj,
                             struct session_obj *sess_obj)
 {
@@ -713,6 +723,13 @@ no_config:
        ret = ar_err_get_lnx_err_code(ret);
        AGM_LOGE("Failed to open the graph with error %d\n", ret);
        goto free_graph_obj;
+    }
+
+    ret = graph_set_backend_media(graph_obj, &meta_data_kv->gkv, dev_obj);
+    if (ret) {
+        AGM_LOGE("Failed to set the backend format, error %d\n", ret);
+        gsl_close(graph_obj->graph_handle);
+        goto free_graph_obj;
     }
 
     ret = gsl_register_event_cb(graph_obj->graph_handle,
@@ -1491,6 +1508,11 @@ int graph_add(struct graph_obj *graph_obj,
                                      meta_data_kv->ckv.kv;
     metadata_print(meta_data_kv);
     print_graph_alias(meta_data_kv);
+
+    ret = graph_set_backend_media(graph_obj, &meta_data_kv->gkv, dev_obj);
+    if (ret)
+        goto done;
+
     ret = gsl_ioctl(graph_obj->graph_handle, GSL_CMD_ADD_GRAPH, &add_graph,
                     sizeof(struct gsl_cmd_graph_select));
     if (ret != 0) {
@@ -1730,6 +1752,11 @@ int graph_change(struct graph_obj *graph_obj,
     change_graph.cal_key_vect.kvp = (struct gsl_key_value_pair *)
                                      meta_data_kv->ckv.kv;
     print_graph_alias(meta_data_kv);
+
+    ret = graph_set_backend_media(graph_obj, &meta_data_kv->gkv, dev_obj);
+    if (ret)
+        goto done;
+
     ret = gsl_ioctl(graph_obj->graph_handle, GSL_CMD_CHANGE_GRAPH, &change_graph,
                     sizeof(struct gsl_cmd_graph_select));
     if (ret != 0) {
