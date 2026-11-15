@@ -207,6 +207,14 @@ int configure_buffer_params(struct graph_obj *gph_obj,
         return 0;
     }
 
+    if (graph_native()) {
+        ret = graph_native_set_media(gph_obj->graph_handle, sess_obj);
+        if (ret) {
+            AGM_LOGE("Failed to set the media format, error %d\n", ret);
+            return ret;
+        }
+    }
+
     AGM_LOGD("Enter");
     /*
      *In case of non-tunnel mode we configure
@@ -272,7 +280,7 @@ int configure_buffer_params(struct graph_obj *gph_obj,
                  "Playback":"Capture", buffer_config.size,
                   buffer_config.count);
 
-        if (mode == AGM_DATA_PUSH_PULL) {
+        if (mode == AGM_DATA_PUSH_PULL && !graph_native()) {
             buf_config.buff_size = buffer_config.count *
                 buffer_config.size;
             buf_config.num_buffs = 1;
@@ -882,6 +890,15 @@ force_configure:
             goto done;
         }
     }
+
+    if (graph_native() && stream_config.sess_mode == AGM_SESSION_NO_HOST) {
+        ret = graph_native_set_media(graph_obj->graph_handle, sess_obj);
+        if (ret) {
+            AGM_LOGE("Failed to set the media format, error %d\n", ret);
+            goto done;
+        }
+    }
+
     ret = gsl_ioctl(graph_obj->graph_handle, GSL_CMD_PREPARE, NULL, 0);
     if (ret !=0) {
         ret = ar_err_get_lnx_err_code(ret);
