@@ -1113,11 +1113,15 @@ static int list_gsl_backends()
     num_group_devices = 0;
 
     ret = ar_err_get_lnx_err_code(gsl_get_backends(NULL, &count));
-    if (ret)
+    if (ret) {
+        AGM_LOGE("GSL lists no backends, error %d\n", ret);
         return ret;
+    }
 
-    if (!count)
+    if (!count) {
+        AGM_LOGE("the sound card has no backends\n");
         return -ENODEV;
+    }
 
     backends = calloc(count, sizeof(*backends));
     if (!backends)
@@ -1140,6 +1144,10 @@ static int list_gsl_backends()
         if (populate_device_hw_ep_info(dev_obj))
             dev_obj->hw_ep_info.dir = backends[i].is_capture ? AUDIO_INPUT :
                                                               AUDIO_OUTPUT;
+
+        AGM_LOGD("backend %u is %s, %s\n", dev_obj->pcm_id, dev_obj->name,
+                 dev_obj->hw_ep_info.dir == AUDIO_INPUT ? "capture" :
+                                                          "playback");
 
         pthread_mutex_init(&dev_obj->lock, (const pthread_mutexattr_t *) NULL);
         list_add_tail(&device_list, &dev_obj->list_node);
@@ -1354,6 +1362,8 @@ bool get_file_path_extn(char* file_path_extn, char* file_path_extn_wo_variant)
 
         split_snd_card_name(snd_card_name, file_path_extn,
                             file_path_extn_wo_variant);
+        AGM_LOGI("ACDB files of %s: %s, without variant %s\n", snd_card_name,
+                 file_path_extn, file_path_extn_wo_variant);
 
         return true;
     }

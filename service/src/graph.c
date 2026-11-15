@@ -193,6 +193,9 @@ static int graph_configure_module(module_info_t *mod,
         sess_obj->in_media_config.format == AGM_FORMAT_AAC)
         return configure_aac_encoder(mod, graph_obj);
 
+    AGM_LOGD("tag %x, module %x instance %x is left to the kernel\n",
+             mod->tag, mod->mid, mod->miid);
+
     return 0;
 }
 

@@ -351,8 +351,11 @@ int graph_native_set_media(gsl_handle_t graph, struct session_obj *session)
         struct snd_compr_params params;
 
         ret = compress_params(config, media, buffer, &params);
-        if (ret)
+        if (ret) {
+            AGM_LOGE("no compress parameters for format %d, error %d\n",
+                     media->format, ret);
             return ret;
+        }
 
         ret = gsl_ioctl(graph, GSL_CMD_CONFIGURE_COMPRESS_MEDIA, &params,
                         sizeof(params));
@@ -384,6 +387,9 @@ int graph_native_set_backend(gsl_handle_t graph,
     backend.num_channels = media->channels;
     backend.data_format = media->data_format;
     sample_bits(media->format, &backend.bit_width, &backend.bits_per_sample);
+
+    AGM_LOGD("backend %s (%u): %u Hz, %u channels, format %d\n", device->name,
+             device->pcm_id, media->rate, media->channels, media->format);
 
     ret = gsl_ioctl(graph, GSL_CMD_CONFIGURE_BACKEND_MEDIA, &backend,
                     sizeof(backend));
