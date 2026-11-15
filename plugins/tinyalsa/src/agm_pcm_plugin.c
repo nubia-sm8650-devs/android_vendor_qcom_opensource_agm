@@ -39,6 +39,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <linux/ioctl.h>
+#include <sys/ioctl.h>
 #include <sys/time.h>
 #include <sys/mman.h>
 #include <sound/asound.h>
@@ -109,6 +110,7 @@ struct agm_pcm_priv {
     /* idx: 0: out port, 1: in port */
     struct agm_mmap_buffer_port mmap_buffer_port[2];
     bool mmap_status;
+    bool kernel_position;
     uint32_t mmap_buf_tout;
 };
 
@@ -319,6 +321,27 @@ static int agm_pcm_plugin_get_shared_pos(struct pcm_plugin_pos_buf_info *pos_buf
     return -EAGAIN;
 }
 
+/*
+ * A position buffer of size zero is the PCM of a sound card, which keeps the
+ * position itself.
+ */
+static int agm_pcm_plugin_kernel_hw_ptr(struct agm_pcm_priv *priv)
+{
+    struct snd_pcm_sync_ptr sync = {0};
+
+    sync.flags = SNDRV_PCM_SYNC_PTR_HWSYNC | SNDRV_PCM_SYNC_PTR_APPL |
+                 SNDRV_PCM_SYNC_PTR_AVAIL_MIN;
+
+    if (ioctl(priv->buf_info->pos_buf_fd, SNDRV_PCM_IOCTL_SYNC_PTR, &sync) < 0)
+        return -errno;
+
+    priv->pos_buf->hw_ptr = sync.s.status.hw_ptr;
+    priv->pos_buf->tstamp.tv_sec = sync.s.status.tstamp.tv_sec;
+    priv->pos_buf->tstamp.tv_nsec = sync.s.status.tstamp.tv_nsec;
+
+    return 0;
+}
+
 static int agm_pcm_plugin_update_hw_ptr(struct agm_pcm_priv *priv)
 {
     int retries = 10;
@@ -333,6 +356,9 @@ static int agm_pcm_plugin_update_hw_ptr(struct agm_pcm_priv *priv)
     uint32_t crossed_boundary = 0;
     snd_pcm_uframes_t boundary = 0;
     uint32_t old_frame_counter = priv->pos_buf->frame_counter;
+
+    if (priv->kernel_position)
+        return agm_pcm_plugin_kernel_hw_ptr(priv);
 
     do {
         ret = agm_pcm_plugin_get_shared_pos(priv->pos_buf,
@@ -454,6 +480,13 @@ static int agm_pcm_plugin_reset(struct pcm_plugin *plugin)
         AGM_LOGE("%s: failed to clear shared buffer\n", __func__);
         ret = -EINVAL;
     }
+    if (priv->kernel_position) {
+        if (ioctl(priv->buf_info->pos_buf_fd, SNDRV_PCM_IOCTL_RESET) < 0)
+            return -errno;
+
+        return ret ? ret : agm_pcm_plugin_update_hw_ptr(priv);
+    }
+
     agm_pcm_plugin_update_hw_ptr(priv);
     priv->pos_buf->hw_ptr = (snd_pcm_uframes_t)(priv->pos_buf->hw_ptr % priv->total_size_frames);
     priv->pos_buf->hw_ptr_base = 0;
@@ -707,8 +740,9 @@ static int agm_pcm_close(struct pcm_plugin *plugin)
     if (priv->mmap_status) {
         if (plugin->mode & PCM_NOIRQ) {
             if (priv->pos_buf) {
-                munmap(priv->pos_buf->pos_buf_addr,
-                        priv->buf_info->pos_buf_size);
+                if (priv->pos_buf->pos_buf_addr)
+                    munmap(priv->pos_buf->pos_buf_addr,
+                            priv->buf_info->pos_buf_size);
                 free(priv->pos_buf);
                 priv->pos_buf = NULL;
             }
@@ -847,12 +881,16 @@ static void* agm_pcm_mmap(struct pcm_plugin *plugin, void *addr __unused, size_t
             if (!pos)
                 return MAP_FAILED;
 
-            pos->pos_buf_addr = mmap(0, priv->buf_info->pos_buf_size,
-                    PROT_READ | PROT_WRITE, MAP_SHARED,
-                    priv->buf_info->pos_buf_fd, 0);
-            if (pos->pos_buf_addr == MAP_FAILED) {
-                free(pos);
-                return MAP_FAILED;
+            if (!priv->buf_info->pos_buf_size) {
+                priv->kernel_position = true;
+            } else {
+                pos->pos_buf_addr = mmap(0, priv->buf_info->pos_buf_size,
+                        PROT_READ | PROT_WRITE, MAP_SHARED,
+                        priv->buf_info->pos_buf_fd, 0);
+                if (pos->pos_buf_addr == MAP_FAILED) {
+                    free(pos);
+                    return MAP_FAILED;
+                }
             }
 
             priv->pos_buf = pos;
@@ -889,8 +927,9 @@ static int agm_pcm_munmap(struct pcm_plugin *plugin, void *addr, size_t length)
     priv->mmap_status = false;
     if (plugin->mode & PCM_NOIRQ) {
         if (priv->pos_buf) {
-            munmap(priv->pos_buf->pos_buf_addr,
-                    priv->buf_info->pos_buf_size);
+            if (priv->pos_buf->pos_buf_addr)
+                munmap(priv->pos_buf->pos_buf_addr,
+                        priv->buf_info->pos_buf_size);
             free(priv->pos_buf);
             priv->pos_buf = NULL;
         }
