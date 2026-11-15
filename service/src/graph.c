@@ -2359,6 +2359,13 @@ int graph_set_media_config_datapath(struct graph_obj *graph_obj)
     module_info_t *mod = NULL;
     struct session_obj *sess_obj = graph_obj->sess_obj;
 
+    if (graph_native()) {
+        if (sess_obj->stream_config.sess_mode != AGM_SESSION_COMPRESS)
+            return 0;
+
+        return graph_native_set_media(graph_obj->graph_handle, sess_obj);
+    }
+
     if (is_media_config_needed_on_datapath(sess_obj->out_media_config.format)) {
         list_for_each(node, &graph_obj->tagged_mod_list) {
             mod = node_to_item(node, module_info_t, list);
