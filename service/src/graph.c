@@ -72,6 +72,7 @@
 #include "gsl_intf.h"
 #include <agm/graph.h>
 #include <agm/graph_module.h>
+#include <agm/graph_native.h>
 #include <agm/metadata.h>
 #include <agm/utils.h>
 #include <agm/agm_memlogger.h>
@@ -178,6 +179,15 @@ done:
 }
 
 #define PULL_PUSH_SHMEM_ENDPOINT SHMEM_ENDPOINT /** Temp: till pull mode keys are defined */
+static int graph_configure_module(module_info_t *mod,
+                                  struct graph_obj *graph_obj)
+{
+    if (graph_native() && graph_native_configures(mod->tag))
+        return 0;
+
+    return mod->configure(mod, graph_obj);
+}
+
 int configure_buffer_params(struct graph_obj *gph_obj,
                             struct session_obj *sess_obj)
 {
@@ -850,7 +860,7 @@ force_configure:
                 mod->is_configured = true;
                 continue;
             } else {
-                ret = mod->configure(mod, graph_obj);
+                ret = graph_configure_module(mod, graph_obj);
                 if (ret != 0) {
                     AGM_LOGE("Module configuration for miid %x, mid %x, tag %x, failed:%d\n",
                              mod->miid, mod->mid, mod->tag, ret);
@@ -1573,7 +1583,7 @@ int graph_add(struct graph_obj *graph_obj,
             }
 
             if (mod->configure) {
-                ret = mod->configure(mod, graph_obj);
+                ret = graph_configure_module(mod, graph_obj);
                 if (ret != 0)
                     goto done;
                 mod->is_configured = true;
@@ -1715,7 +1725,7 @@ int graph_change(struct graph_obj *graph_obj,
         mod = node_to_item(node, module_info_t, list);
         if (mod->configure && !mod->is_configured &&
            (mod->dev_obj != NULL && device_get_start_refcnt(mod->dev_obj) == 0)) {
-            ret = mod->configure(mod, graph_obj);
+            ret = graph_configure_module(mod, graph_obj);
             if (ret != 0)
                 goto done;
             mod->is_configured = true;
@@ -2301,7 +2311,7 @@ int graph_set_media_config_datapath(struct graph_obj *graph_obj)
         list_for_each(node, &graph_obj->tagged_mod_list) {
             mod = node_to_item(node, module_info_t, list);
             if (mod->tag == STREAM_INPUT_MEDIA_FORMAT) {
-                ret = mod->configure(mod, graph_obj);
+                ret = graph_configure_module(mod, graph_obj);
                 if (ret != 0) {
                     AGM_LOGE("Module configuration for miid %x, mid %x, tag %x, failed:%d\n",
                               mod->miid, mod->mid, mod->tag, ret);

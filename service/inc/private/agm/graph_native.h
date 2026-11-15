@@ -4,6 +4,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 static inline bool graph_native(void)
 {
@@ -15,5 +16,6 @@ static inline bool graph_native(void)
 }
 
 int graph_native_card_name(char *name, size_t size);
+bool graph_native_configures(uint32_t tag);
 
 #endif
